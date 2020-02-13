@@ -6,6 +6,51 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import numpy as np
 
+def laplacian3D(u):
+    """calculate the discrete laplacian of a 3d scalar field"""
+
+
+    print('debug.Shape of laplacian input is : ' + str(get_conv_shape(u)))
+    assert len(get_conv_shape(u)) is 5, 'wrong input in laplacian'
+    
+
+    #TODO must double check this function. Potentially test it
+
+    filter = tf.constant([
+        [[0. ,0., 0.],
+         [0. ,1., 0.],
+         [0., 0., 0.]]
+        ,
+        [[0., 1., 0.],
+         [1., -6., 1.],
+         [0., 1., 0.]]
+        ,
+        [[0., 0., 0.],
+         [0., 1., 0.],
+         [0., 0., 0.]]
+    ])
+    filter = tf.reshape(filter,[3,3,3,1,1])
+
+    out = tf.nn.conv3d(
+        u,
+        filter,
+        strides=[1,1,1,1,1],
+        padding = "SAME",
+        data_format='NDHWC',
+    )
+
+    return tf.squeeze(out)
+
+def construct_diffusivity(brain_anatomy , D_w):
+    """this function calculates the parameter D of the tumor growth PDE, required to calculate the loss derived from physics
+    formula: D =  D_w*p_w + D_g*p_g 
+    D_w = 10 * D_g """
+    D_w = tf.reshape(D_w,get_conv_shape(D_w)+[1,1,1])
+    assert len(get_conv_shape(brain_anatomy)) is 5, 'problemo'
+    diffu = tf.math.add (tf.math.multiply(D_w, brain_anatomy[:,:,:,:,1]) , tf.math.multiply(D_w*0.1,brain_anatomy[:,:,:,:,2]) )
+
+    return diffu
+
 def lrelu(x, leak=0.2):
     return tf.maximum(x, leak*x)
    

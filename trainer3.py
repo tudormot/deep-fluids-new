@@ -85,6 +85,10 @@ class Trainer3(Trainer):
         self.g_loss_j_l1 = tf.reduce_mean(tf.abs(self.G_jaco_ - self.x_jaco))
         self.g_loss = self.g_loss_l1*self.w1 + self.g_loss_j_l1*self.w2
 
+        if self.phys_loss:
+            self.loss_physics = self.construct_physics_loss(self.G_,self.geom, self.y)
+            self.g_loss += 1. * self.loss_physics
+
         if 'dg' in self.arch:
             self.g_loss_real = tf.reduce_mean(tf.square(self.D_G-1))
             self.d_loss_fake = tf.reduce_mean(tf.square(self.D_G))
@@ -142,6 +146,34 @@ class Trainer3(Trainer):
             #tf.summary.image("zym/vort", x_vort['zym'][:,::-1]),
         ]
         self.summary_once = tf.summary.merge(summary) # call just once
+
+
+    def construct_physics_loss(self, concentration_output,brain_anatomy, parameters_input):
+        """computes physics loss for batched data.
+           expected input: concentration output : [B,X,Y,Z]
+                           brain_anatomy: [B,X,Y,Z,C] , C = 3
+                        
+        """
+        print('in physics loss. shape of parameters_input: ', get_conv_shape(parameters_input))
+
+        #TODO: right now dependant on parameter order in parameters_input. Could implement a more robust method using pname, see data.py
+        D_w = parameters_input[:,0]
+        rho = parameters_input[:,1]
+        time = parameters_input[:,2]
+
+        rho = tf.reshape(rho,get_conv_shape(rho) + [1,1,1,1])
+
+        diffusion_term = tf.math.multiply(construct_diffusivity(brain_anatomy , D_w),laplacian3D(concentration_output))
+        proliferation_term = tf.math.multiply(rho, concentration_output)
+        proliferation_term = tf.math.multiply(proliferation_term, 1 - concentration_output) 
+        
+        temp1 =  tf.gradients(concentration_output, time)[0]
+        #print(help(time))
+        print('debug.content of gradients is : ' + str(temp1))
+        temp2 = tf.math.add(tf.expand_dims(diffusion_term,-1),proliferation_term)
+        temp1 = tf.squared_difference( temp1,temp2 )
+        loss = tf.reduce_mean(temp1)
+        return loss
 
     def train(self):
         if 'ae' in self.arch:

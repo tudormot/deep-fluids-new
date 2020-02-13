@@ -20,6 +20,7 @@ class Trainer(object):
         self.dataset = config.dataset
         self.data_type = config.data_type
         self.arch = config.arch
+        self.phys_loss = config.phys_loss
 
         if 'nn' in self.arch:
             self.xt, self.yt = batch_manager.test_batch()

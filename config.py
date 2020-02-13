@@ -55,6 +55,7 @@ train_arg.add_argument('--beta1', type=float, default=0.5)
 train_arg.add_argument('--beta2', type=float, default=0.999)
 train_arg.add_argument('--lr_update', type=str, default='decay',
                        choices=['decay', 'step'])
+train_arg.add_argument('--phys_loss', type=str2bool, default=False)
 
 # Misc
 misc_arg = add_argument_group('Misc')
@@ -67,7 +68,7 @@ misc_arg.add_argument('--log_step', type=int, default=500)
 misc_arg.add_argument('--test_step', type=int, default=1000)
 misc_arg.add_argument('--save_sec', type=int, default=3600)
 misc_arg.add_argument('--random_seed', type=int, default=123)
-misc_arg.add_argument('--gpu_id', type=str, default='0')
+misc_arg.add_argument('--gpu_id', type=str, default='')
 
 def get_config():
     config, unparsed = parser.parse_known_args()
