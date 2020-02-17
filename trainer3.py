@@ -86,6 +86,7 @@ class Trainer3(Trainer):
         self.g_loss = self.g_loss_l1*self.w1 + self.g_loss_j_l1*self.w2
 
         if self.phys_loss:
+            print('debugging phyisics loss. G_, geom , y : ',self.G_,self.geom, self.y)
             self.loss_physics = self.construct_physics_loss(self.G_,self.geom, self.y)
             self.g_loss += 1. * self.loss_physics
 
@@ -156,23 +157,24 @@ class Trainer3(Trainer):
         """
         print('in physics loss. shape of parameters_input: ', get_conv_shape(parameters_input))
 
-        #TODO: right now dependant on parameter order in parameters_input. Could implement a more robust method using pname, see data.py
-        D_w = parameters_input[:,0]
-        rho = parameters_input[:,1]
-        time = parameters_input[:,2]
+        with tf.variable_scope('physics_loss',reuse=False) as vs:
 
-        rho = tf.reshape(rho,get_conv_shape(rho) + [1,1,1,1])
+            #TODO: right now dependant on parameter order in parameters_input. Could implement a more robust method using pname, see data.py
+            D_w = parameters_input[:,0]
+            rho = parameters_input[:,1]
+            #time = parameters_input[:,2]
 
-        diffusion_term = tf.math.multiply(construct_diffusivity(brain_anatomy , D_w),laplacian3D(concentration_output))
-        proliferation_term = tf.math.multiply(rho, concentration_output)
-        proliferation_term = tf.math.multiply(proliferation_term, 1 - concentration_output) 
-        
-        temp1 =  tf.gradients(concentration_output, time)[0]
-        #print(help(time))
-        print('debug.content of gradients is : ' + str(temp1))
-        temp2 = tf.math.add(tf.expand_dims(diffusion_term,-1),proliferation_term)
-        temp1 = tf.squared_difference( temp1,temp2 )
-        loss = tf.reduce_mean(temp1)
+            rho = tf.reshape(rho,get_conv_shape(rho) + [1,1,1,1])
+
+            diffusion_term = tf.math.multiply(construct_diffusivity(brain_anatomy , D_w),laplacian3D(concentration_output))
+            proliferation_term = tf.math.multiply(rho, concentration_output)
+            proliferation_term = tf.math.multiply(proliferation_term, 1 - concentration_output) 
+            
+            temp1 = du_dt(concentration_output, parameters_input)  
+            print('debug.content of gradients is : ' + str(temp1))
+            temp2 = tf.math.add(tf.expand_dims(diffusion_term,-1),proliferation_term)
+            temp1 = tf.squared_difference( temp1,temp2 )
+            loss = tf.reduce_mean(temp1)
         return loss
 
     def train(self):

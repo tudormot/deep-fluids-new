@@ -51,6 +51,47 @@ def construct_diffusivity(brain_anatomy , D_w):
 
     return diffu
 
+def du_dt(concentration_output, parameters_input ): #TODO:debug this function
+    """super inefficient function, however I can't think of any way to do it with available tf.gradients in tf.
+    See discussion: https://github.com/tensorflow/tensorflow/issues/4897
+    what makes this discussion DOUBLE inefficient is that on top of the 4 for loops
+    we are calculating the gradient not only wrt to time, but wrt to all input parameters.
+    This is because slicing the 'parameters_input' tensor to extract only the time would 
+    modify the computational graph, and the time slice would not be connected in the graph with 
+    the concentration_output """
+
+    
+    b,w,l,h,_ = get_conv_shape(concentration_output)
+    print('we are here')
+    for i in range(b):
+        b_list = []
+        for j in range(w):
+            l_list = []
+            for m in range(l):
+                h_list = []
+                for n in range(h):
+                    h_list.append(tf.gradients(concentration_output[i,j,m,n],parameters_input)[0][i,2]) #[0] as tf.gradients returns list, [m,2] as we are interested in time(position 2 in input) of batch i
+                
+                l_list.append(tf.stack(h_list))
+
+            w_list.append(tf.stack(l_list))
+        
+        b_list.append(tf.stack(h_list))
+    
+    out = tf.stack(b_list)  
+
+    #old alternative (did not debug as the operation takes too long):
+    #out = tf.stack([tf.stack([tf.stack([tf.stack([tf.gradients(concentration_output[m,i,j,k],parameters_input)[0][m,2] for k in range(h)]) for j in range (l)]) for i in range(w)]) for m in range(b)])
+    print('debug in du_dt, shape of out is :' , get_conv_shape(out))
+    
+    return out  
+
+
+
+
+
+
+
 def lrelu(x, leak=0.2):
     return tf.maximum(x, leak*x)
    
