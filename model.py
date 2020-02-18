@@ -2,6 +2,54 @@ import numpy as np
 import tensorflow as tf
 from ops import *
 
+
+def TumorGenerator(geom,y,filters,output_shape, num_conv , repeat,arch, name = 'tumor', reuse=tf.AUTO_REUSE ):
+    print('debug.arch is: ' , arch)
+
+    with tf.variable_scope(name, reuse=reuse) as vs:
+        if arch == 'alternative':
+            # perform a concatenation betwe a latent anatomy of shape bx8x8x8xself.encode_ch, and bx8x8x8.input_ch .
+            # encode_ch and input_ch are hyperparameters, to be adjusted in config.py or command line
+
+            # TODO: for the time being we are just declaring them here
+            # since filters=128 by default, thought these are common sense values
+
+            print('debug.in tumorgenerator, arch is alternative')
+            encode_ch = 64
+            input_ch = 64
+            zz, _ = EncoderBE3(geom, filters, encode_ch, 'enc',
+                               num_conv=num_conv - 1, conv_k=3, repeat=repeat,
+                               act=lrelu, reuse=reuse, alternative_output_shape=True)
+
+            y_expanded_shape = [8, 8, 8, input_ch]
+
+            y_expanded = linear(y, int(np.prod(y_expanded_shape)), name='expand_params_fc')
+            y_expanded = tf.reshape(y_expanded, [-1] + y_expanded_shape)
+
+            param_geom = tf.concat([y_expanded, zz], axis=-1)
+            print(param_geom)
+            print(y)
+            print(zz)
+            G_, _ = GeneratorBE3(param_geom, filters, output_shape, reuse = reuse,
+                                               num_conv=num_conv, repeat=repeat, alternative_input_shape=True)
+
+        else:
+            print('debug.in tumorgenerator, arch is NOT alternative!')
+            # ivan's original architecture, latent anatomy represented as 1d array, concatenated with input parameters as a 1d array
+            zz, _ = EncoderBE3(geom, filters, 1024, 'enc',
+                               num_conv=num_conv - 1, conv_k=3, repeat=repeat,
+                               act=lrelu, reuse=reuse)
+            param_geom = tf.concat([y, zz], axis=1)
+            print(param_geom)
+            print(y)
+            print(zz)
+            G_,_ = GeneratorBE3(param_geom, filters, output_shape,
+                                               num_conv=num_conv, repeat=repeat,reuse = reuse)
+
+    variables = tf.contrib.framework.get_variables(vs)
+    return G_,variables
+
+
 def GeneratorBE(z, filters, output_shape, name='G',
                 num_conv=4, conv_k=3, last_k=3, repeat=0, skip_concat=False, act=lrelu, reuse=False):
     with tf.variable_scope(name, reuse=reuse) as vs:
@@ -61,7 +109,8 @@ def GeneratorBE3(z, filters, output_shape, name='G',
             for dim in shape[1:-1]:
                 assert int(dim) is 8, 'Problem'
             
-            x = z 
+            x = z
+            layer_num = 0
                     
         else:
             

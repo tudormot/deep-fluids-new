@@ -46,8 +46,17 @@ class BatchManager(object):
         
         self.num_samples = len(self.paths)
         assert(self.num_samples > 0)
+        print('Using a split of 10% validation set, 90% training set')
+        self.num_samples_training = int(0.9 * self.num_samples)
+        self.num_samples_validation = self.num_samples - self.num_samples_training
+
+        np.random.shuffle(self.paths)
+        self.paths_training = self.paths[:self.num_samples_training]
+        self.paths_validation = self.paths[self.num_samples_training:]
+
+
         self.batch_size = config.batch_size
-        self.epochs_per_step = self.batch_size / float(self.num_samples) # per epoch
+        self.epochs_per_step = self.batch_size / float(self.num_samples_training) # per epoch
 
         self.data_type = config.data_type
         #if self.data_type == 'velocity':
@@ -88,6 +97,14 @@ class BatchManager(object):
         self.enqueue = self.q.enqueue([self.x, self.y, self.geom])
         self.num_threads = np.amin([config.num_worker, multiprocessing.cpu_count(), self.batch_size])
 
+        self.q_val =tf.FIFOQueue(capacity, [tf.float32, tf.float32, tf.float32], [feature_dim, label_dim, geom_dim])
+        self.x_val = tf.placeholder(dtype=tf.float32, shape=feature_dim)
+        # print("here               ",feature_dim, label_dim)
+        self.y_val = tf.placeholder(dtype=tf.float32, shape=label_dim)
+        self.geom_val = tf.placeholder(dtype=tf.float32, shape=geom_dim)
+        self.enqueue_val = self.q_val.enqueue([self.x_val, self.y_val, self.geom_val])
+        self.num_threads_val = 1 #TODO: this is hardcoded for the time being
+
         r = np.loadtxt(os.path.join(self.root, self.data_type[0]+'_range.txt'))
         self.x_range = max(abs(r[0]), abs(r[1]))
         self.y_range = []
@@ -125,11 +142,13 @@ class BatchManager(object):
         self.sess = sess
         self.coord = tf.train.Coordinator()
 
+
         # Create a method for loading and enqueuing
         def load_n_enqueue(sess, enqueue, coord, paths, rng,
                            x, y, geom, data_type, x_range, y_range):
             with coord.stop_on_exception():                
                 while not coord.should_stop():
+                    #todo: we should find a method to sample data without replacement. This is more important for the validation set
                     id = rng.randint(len(paths))
                     x_, y_, geom_ = preprocess(paths[id], data_type, x_range, y_range)
 
@@ -138,12 +157,14 @@ class BatchManager(object):
                     #print(x_.shape, y_.shape)
                     sess.run(enqueue, feed_dict={x: x_, y: y_, geom: geom_})
 
+
+
         # Create threads that enqueue
         self.threads = [threading.Thread(target=load_n_enqueue, 
                                           args=(self.sess, 
                                                 self.enqueue,
                                                 self.coord,
-                                                self.paths,
+                                                self.paths_training,
                                                 self.rng,
                                                 self.x,
                                                 self.y,
@@ -151,7 +172,20 @@ class BatchManager(object):
                                                 self.data_type,
                                                 self.x_range,
                                                 self.y_range)
-                                          ) for i in range(self.num_threads)]
+                                          ) for i in range(self.num_threads)] + [
+                        threading.Thread(target=load_n_enqueue,
+                                                      args=(self.sess,
+                                                            self.enqueue_val,
+                                                            self.coord,
+                                                            self.paths_validation,
+                                                            self.rng,
+                                                            self.x_val,
+                                                            self.y_val,
+                                                            self.geom_val,
+                                                            self.data_type,
+                                                            self.x_range,
+                                                            self.y_range)
+                                                      ) for i in range(self.num_threads_val)]
 
         # define signal handler
         def signal_handler(signum, frame):
@@ -179,6 +213,9 @@ class BatchManager(object):
 
     def batch(self):
         return self.q.dequeue_many(self.batch_size)
+
+    def batch_val(self):
+        return self.q_val.dequeue_many(self.batch_size)
 
     def batch_(self, b_num):
         assert(len(self.paths) % b_num == 0)

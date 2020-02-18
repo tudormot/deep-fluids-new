@@ -16,47 +16,15 @@ class Trainer3(Trainer):
             self.G_s, self.G_var = GeneratorBE3(self.y, self.filters, self.output_shape,
                                                num_conv=self.num_conv, repeat=self.repeat)
             _, self.G_ = jacobian3(self.G_s)
-        elif self.arch is 'alternative':
-            # perform a concatenation betwe a latent anatomy of shape bx8x8x8xself.encode_ch, and bx8x8x8.input_ch . 
-            # encode_ch and input_ch are hyperparameters, to be adjusted in config.py or command line 
 
-            #TODO: for the time being we are just declaring them here
-            #since filters=128 by default, thought these are common sense values 
-            self.encode_ch = 64
-            self.input_ch  = 64
-            zz, _ = EncoderBE3(self.geom, self.filters, self.encode_ch, 'enc',
-                              num_conv=self.num_conv - 1, conv_k=3, repeat=self.repeat,
-                              act=lrelu, reuse=False, alternative_output_shape = True)
-
-            y_expanded_shape = [8,8,8,self.input_ch]
-
-            y_expanded = linear(self.y, int(np.prod(y_expanded_shape)), name='expand_params_fc')
-            y_expanded = tf.reshape(y_expanded, [-1] + y_expanded_shape)
-
-
-            param_geom=tf.concat([y_expanded,zz], axis=-1)
-            print(param_geom)
-            print(self.y)
-            print(zz)
-            self.G_, self.G_var = GeneratorBE3(param_geom, self.filters, self.output_shape,
-                                                  num_conv=self.num_conv, repeat=self.repeat,alternative_input_shape = True)
-        else:
-            #ivan's original architecture, latent anatomy represented as 1d array, concatenated with input parameters as a 1d array
-            zz, _ = EncoderBE3(self.geom, self.filters, 1024, 'enc',
-                              num_conv=self.num_conv - 1, conv_k=3, repeat=self.repeat,
-                              act=lrelu, reuse=False)
-            param_geom=tf.concat([self.y,zz], axis=1)
-            print(param_geom)
-            print(self.y)
-            print(zz)
-            self.G_, self.G_var = GeneratorBE3(param_geom, self.filters, self.output_shape,
-                                                  num_conv=self.num_conv, repeat=self.repeat)
-
+        self.G_,self.G_var = TumorGenerator(self.geom, self.y, self.filters, self.output_shape, self.num_conv, self.repeat, self.arch, name='tumor', reuse=False)
+        self.G_val, _      = TumorGenerator(self.geom_val, self.y_val, self.filters, self.output_shape, self.num_conv, self.repeat, self.arch, name='tumor', reuse=True)
 
         self.G = denorm_img3(self.G_) # for debug
 
         #self.G_jaco_, self.G_vort_ = jacobian3(self.G_)
         self.G_jaco_ = jacobian3tumor(self.G_)
+        self.G_jaco_val = jacobian3tumor(self.G_val)
         #self.G_vort = denorm_img3(self.G_vort_)
         
         if 'dg' in self.arch:
@@ -85,10 +53,18 @@ class Trainer3(Trainer):
         self.g_loss_j_l1 = tf.reduce_mean(tf.abs(self.G_jaco_ - self.x_jaco))
         self.g_loss = self.g_loss_l1*self.w1 + self.g_loss_j_l1*self.w2
 
+        #validation losses
+        self.g_loss_l1_val = tf.reduce_mean(tf.abs(self.G_val - self.x_val))
+        self.g_loss_j_l1_val = tf.reduce_mean(tf.abs(self.G_jaco_val - self.x_jaco_val))
+        self.g_loss_val = self.g_loss_l1_val * self.w1 + self.g_loss_j_l1_val * self.w2
+
         if self.phys_loss:
             print('debugging phyisics loss. G_, geom , y : ',self.G_,self.geom, self.y)
             self.loss_physics = self.construct_physics_loss(self.G_,self.geom, self.y)
             self.g_loss += 1. * self.loss_physics
+
+            self.loss_physics_val = self.construct_physics_loss(self.G_val, self.geom_val, self.y_val)
+            self.g_loss_val += 1. * self.loss_physics_val
 
         if 'dg' in self.arch:
             self.g_loss_real = tf.reduce_mean(tf.square(self.D_G-1))
@@ -242,19 +218,30 @@ class Trainer3(Trainer):
         self.summary_writer.flush()
         
         # train
+
+        run_opts = tf.RunOptions(report_tensor_allocations_upon_oom=True)
+
         for step in trange(self.start_step, self.max_step):
             if 'dg' in self.arch:
                 self.sess.run([self.g_optim, self.d_optim])
             else:
-                self.sess.run(self.g_optim)
+                self.sess.run(self.g_optim,options = run_opts)
 
             if step % self.log_step == 0 or step == self.max_step-1:
                 ep = step*self.batch_manager.epochs_per_step
                 loss, summary = self.sess.run([self.g_loss,self.summary_op],
-                                              feed_dict={self.epoch: ep})
-                assert not np.isnan(loss), 'Model diverged with loss = NaN'
-                print("\n[{}/{}/ep{:.2f}] Loss: {:.6f}".format(step, self.max_step, ep, loss))
+                                              feed_dict={self.epoch: ep},options = run_opts)
 
+                loss_val = 0.
+                for _ in range(int(self.val_set_size /self.b_num)):
+                    loss_val  += self.sess.run(self.g_loss,
+                                              feed_dict={self.epoch: ep},options = run_opts)
+                loss_val /= int(self.val_set_size /self.b_num)
+                self.summary_writer.add_summary(self.sess.run(tf.summary.scalar('validation_loss', loss_val)), global_step= step)
+
+                assert not np.isnan(loss), 'Model diverged with loss = NaN'
+                print("\n[{}/{}/ep{:.2f}] Training Loss: {:.6f}".format(step, self.max_step, ep, loss))
+                print("\n[{}/{}/ep{:.2f}] Validation Loss: {:.6f}".format(step, self.max_step, ep, loss_val))
                 self.summary_writer.add_summary(summary, global_step=step)
                 self.summary_writer.flush()
 

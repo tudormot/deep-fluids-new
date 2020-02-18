@@ -15,6 +15,7 @@ class Trainer(object):
 
         self.batch_manager = batch_manager
         self.x, self.y, self.geom = batch_manager.batch() # normalized input
+        self.x_val, self.y_val, self.geom_val = batch_manager.batch_val()  # normalized input
 
         self.is_3d = config.is_3d
         self.dataset = config.dataset
@@ -30,6 +31,7 @@ class Trainer(object):
             if self.is_3d:
                 #self.x_jaco, self.x_vort = jacobian3(self.x)
                 self.x_jaco = jacobian3tumor(self.x)
+                self.x_jaco_val = jacobian3tumor(self.x_val)
             else:
                 self.x_jaco, self.x_vort = jacobian(self.x)
 
@@ -39,6 +41,7 @@ class Trainer(object):
         self.c_num = batch_manager.c_num
         self.b_num = config.batch_size
         self.test_b_num = config.test_batch_size
+        self.val_set_size = batch_manager.num_samples_validation
 
         self.repeat = config.repeat
         self.filters = config.filters
