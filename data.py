@@ -46,9 +46,12 @@ class BatchManager(object):
         
         self.num_samples = len(self.paths)
         assert(self.num_samples > 0)
-        print('Using a split of 10% validation set, 90% training set')
+
         self.num_samples_training = int(0.9 * self.num_samples)
         self.num_samples_validation = self.num_samples - self.num_samples_training
+        print('Using a split of 10% validation set, 90% training set')
+        print('Total dataset size: ', self.num_samples)
+        print('Training dataset size: ', self.num_samples_training)
 
         np.random.shuffle(self.paths)
         self.paths_training = self.paths[:self.num_samples_training]
@@ -136,7 +139,7 @@ class BatchManager(object):
             pass
 
     def start_thread(self, sess):
-        print('%s: start to enque with %d threads' % (datetime.now(), self.num_threads))
+        print('%s: start to enque with %d threads' % (datetime.now(), self.num_threads + 1))
 
         # Main thread: create a coordinator.
         self.sess = sess
@@ -194,6 +197,7 @@ class BatchManager(object):
             print('%s: canceled by SIGINT' % datetime.now())
             self.coord.request_stop()
             self.sess.run(self.q.close(cancel_pending_enqueues=True))
+            self.sess.run(self.q_val.close(cancel_pending_enqueues=True))
             self.coord.join(self.threads)
             sys.exit(1)
         signal.signal(signal.SIGINT, signal_handler)
@@ -209,6 +213,7 @@ class BatchManager(object):
 
         self.coord.request_stop()
         self.sess.run(self.q.close(cancel_pending_enqueues=True))
+        self.sess.run(self.q_val.close(cancel_pending_enqueues=True))
         self.coord.join(self.threads)
 
     def batch(self):
@@ -309,7 +314,6 @@ class BatchManager(object):
             #z = [(pi/float(self.y_num[i]-1))*2-1 for i, pi in enumerate(p)] # [-1,1]
             #z = [-1, -1, (p[2]/float(self.y_num[2]-1))*2-1]
             #z = sample['z'].append(z)
-            sample['z'].append([-0.46666667,0.08064516,z_samples[2][ll][2],0.35353535,0.74324324,0.10204082])
             #print(sample['z'])
             #print(z_samples[2])
             p.append(int((z_samples[2][ll][2]+1)*10))
@@ -328,7 +332,9 @@ class BatchManager(object):
             #x = np.expand_dims(x[..., 0], axis=3)
             sample['x'].append(x)
             sample['y'].append(y)
-            #print(sample['y'])
+            sample['geom'].append(geom)
+            sample['z'].append([y[0], y[1], z_samples[2][ll][2]])  # , y[3], y[4], y[5]])
+            print(sample['z'])
             xy = plane_view_np(x, xy_plane=True, project=True)
             zy = plane_view_np(x, xy_plane=False, project=True)
             xym = plane_view_np(x, xy_plane=True, project=False)
@@ -380,9 +386,10 @@ class BatchManager(object):
 def preprocess(file_path, data_type, x_range, y_range):
     #print(file_path)
     with np.load(file_path) as data:
-        x = np.expand_dims(data['x'][...,0][32:96,32:96,32:96], axis=3)   ####################################################################dont FORGET
         y = data['y']
-        geom = data['x'][...,1:][32:96,32:96,32:96]
+        x = np.expand_dims(data['x'][..., 0][int(round(y[3]*128))-32:int(round(y[3]*128))+32,int(round(y[4]*128))-32:int(round(y[4]*128))+32,int(round(y[5]*128))-32:int(round(y[5]*128))+32], axis=3)
+        geom = data['x'][...,1:][int(round(y[3]*128))-32:int(round(y[3]*128))+32,int(round(y[4]*128))-32:int(round(y[4]*128))+32,int(round(y[5]*128))-32:int(round(y[5]*128))+32]
+        y=y[:3]
 
         #print("initial ",  y , "final ", y[2])
 

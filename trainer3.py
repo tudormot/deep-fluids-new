@@ -246,7 +246,7 @@ class Trainer3(Trainer):
                 self.summary_writer.flush()
 
             if step % self.test_step == 0 or step == self.max_step-1:
-                self.generate(z_samples, self.model_dir, idx=step)
+                self.generate(z_samples,gen_list, self.model_dir, idx=step)
 
             if self.lr_update == 'step':
                 if step % self.lr_update_step == self.lr_update_step - 1:
@@ -270,7 +270,7 @@ class Trainer3(Trainer):
             self.G_, _ = GeneratorBE3(self.z, self.filters, self.output_shape,
                                      num_conv=self.num_conv, repeat=self.repeat, reuse=True)        
     
-    def generate(self, inputs, root_path=None, idx=None):
+    def generate(self, inputs,gen_list, root_path=None, idx=None):
         # xy_list = []
         # zy_list = []
         xym_list = []
@@ -284,7 +284,7 @@ class Trainer3(Trainer):
         for bb, z_sample in enumerate(inputs):
             #print("looooooooop_{}".format(bb), z_sample)
             xym, zym = self.sess.run( # xy, zy, 
-                [self.G['xym'], self.G['zym']], {self.y: z_sample}) # self.G['xy'], self.G['zy'],
+                [self.G['xym'], self.G['zym']], {self.y: z_sample, self.geom : gen_list['geom']}) # self.G['xy'], self.G['zy'],
             # xy_list.append(xy)
             # zy_list.append(zy)
             #print("xym unique", np.unique(xym))
